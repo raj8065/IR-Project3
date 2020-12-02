@@ -1,2 +1,2 @@
 # IR-Project3
-A repositorgy for a group project
+A repository for a group project
