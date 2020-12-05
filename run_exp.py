@@ -1,6 +1,7 @@
 import pyterrier as pt
 import pandas as pd
 import time
+import sys
 
 class Indexer():
 
@@ -23,7 +24,7 @@ class Indexer():
         elif stemmer == "porter":
             index_props = {"termpipelines": "PorterStemmer"}
         else: # No Stemmer
-            index_props = {"termpipelines": ""}
+            index_props = {"termpipelines": "NoOp"}
         self.indexer.setProperties(**index_props)
 
     def index(self):
@@ -96,7 +97,8 @@ def conduct_experiment( dataset_name, index_dir_name, stemmer, only_retrieval ):
         print("Time for indexing of [", dataset_name, ", ", stemmer, "]: ", str(index_time_len) )
         print(index.getCollectionStatistics().toString())
 
-        # f = open("Porter_Index.txt","w")
+        # Print Index Terms to a file
+        # f = open("UnStopped_Index.txt","w")
         # for idx in index.getLexicon():
         #     f.write(idx.getKey() + "\n")
         # f.close()
@@ -104,9 +106,7 @@ def conduct_experiment( dataset_name, index_dir_name, stemmer, only_retrieval ):
     # Get index
     index = None
     if( only_retrieval ):
-        # Not implemented yet
-        print("The only_retreival code has not been implemented, Shutting down")
-        return None
+        index = pt.IndexFactory.of( index_dir_name + '/data.properties' )
     else:
         index = pt.IndexFactory.of(indexref)
 
@@ -135,14 +135,28 @@ def conduct_experiment( dataset_name, index_dir_name, stemmer, only_retrieval ):
 
     return index_time_len, evaluation
 
+
 def main():
     if not pt.started():
         pt.init()
 
     #   Valid Stemmers: "porter", "snowball" and ""
     #   Valid Datasets: "vaswani", "trec-deep-learning-docs"
-    
-    time_taken, evaluation = conduct_experiment("vaswani", "./res/v_None_index", "porter", False)
+
+    # Args
+    argv = sys.argv 
+
+    if( argv < 4 ):
+        print(" Less than 4 arguements inputted, quiting the program.")
+        return 1
+
+    dataset = argv[1]
+    index_loc = arg[2]
+    stemmer = arg[3]
+    only_retr = argv[4] == 'T'
+
+    time_taken, evaluation = conduct_experiment(dataset, index_loc, stemmer, only_retr)
+
 #     cisi_dataset = pd.read_csv("./res/cisi_dataframe.csv")
 #     corpus = cisi_dataset['text']
 #     doc_no = cisi_dataset['docno'].astype(str)
