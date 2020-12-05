@@ -146,13 +146,13 @@ def main():
     # Args
     argv = sys.argv 
 
-    if( argv < 4 ):
+    if( len(argv) < 4 ):
         print(" Less than 4 arguements inputted, quiting the program.")
         return 1
 
     dataset = argv[1]
-    index_loc = arg[2]
-    stemmer = arg[3]
+    index_loc = argv[2]
+    stemmer = argv[3]
     only_retr = argv[4] == 'T'
 
     time_taken, evaluation = conduct_experiment(dataset, index_loc, stemmer, only_retr)
