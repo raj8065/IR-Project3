@@ -7,6 +7,7 @@ class Indexer():
     def __init__(self, index_path, stemmer, corpus, docno):      
         self.index_path = index_path
         
+        # Get the corpus
         self.corpus = corpus
         if docno is not None:
             self.indexer = pt.DFIndexer(index_path)
@@ -15,12 +16,15 @@ class Indexer():
             self.indexer = pt.TRECCollectionIndexer(index_path)
             self.doc_no = None
 
+        # Set the stemmer, and don't add stopwords
+        index_props = None
         if stemmer=="snowball":
-            index_properties = {"termpipelines": "Stopwords, EnglishSnowballStemmer"}
-            self.indexer.setProperties(**index_properties)
-        else:
-            index_properties = {"termpipelines": "Stopwords, PorterStemmer"}
-            self.indexer.setProperties(**index_properties)
+            index_props = {"termpipelines": "EnglishSnowballStemmer"}
+        elif stemmer == "porter":
+            index_props = {"termpipelines": "PorterStemmer"}
+        else: # No Stemmer
+            index_props = {"termpipelines": ""}
+        self.indexer.setProperties(**index_props)
 
     def index(self):
         if self.doc_no is not None:
@@ -51,42 +55,94 @@ def perform_retrieval(index, topics, save_path):
 
 def evaluate(res, qrels, metrics, perquery):
     return pt.Utils.evaluate(res,qrels,metrics=metrics, perquery=perquery)
-  
+ 
+"""
+dataset: string, the name of the dataset for PyTerrier to use
+index_dir_name: string, name of the indexer to use
+stemmer: string, stemmer type
+only_retrieval: boolean, 
+"""
+def conduct_experiment( dataset_name, index_dir_name, stemmer, only_retrieval ):
+
+    index_time_len = None
+    print("Conducting an experiment [", dataset_name, ", ", stemmer, ", ", only_retrieval, "]:")
+
+    indexref = None
+    if( not only_retrieval ):
+        # Gets the corpus for the experiment
+        dataset_name = dataset_name.lower()
+        corpus = None
+        if dataset_name == "vaswani":
+            ds = pt.datasets.get_dataset("vaswani")
+            corpus = ds.get_corpus()
+        elif dataset_name == "trec-deep-learning-docs":
+            ds = pt.datasets.get_dataset("trec-deep-learning-docs")
+            corpus = ds.get_corpus()
+        else:
+            print("No corpus found, Shutting down.")
+            return None
+
+        # Generate the indexer
+        indexer = Indexer(index_dir_name, stemmer, corpus, None)
+
+        # The indexing
+        start_time = time.time()
+        indexref = indexer.index()
+        end_time = time.time()
+        index = pt.IndexFactory.of(indexref)
+
+        index_time_len = end_time - start_time
+        # Print a nice output
+        print("Time for indexing of [", dataset_name, ", ", stemmer, "]: ", str(index_time_len) )
+        print(index.getCollectionStatistics().toString())
+
+        # f = open("Porter_Index.txt","w")
+        # for idx in index.getLexicon():
+        #     f.write(idx.getKey() + "\n")
+        # f.close()
+
+    # Get index
+    index = None
+    if( only_retrieval ):
+        # Not implemented yet
+        print("The only_retreival code has not been implemented, Shutting down")
+        return None
+    else:
+        index = pt.IndexFactory.of(indexref)
+
+    # Get the other Info
+    queries = None
+    qrels = None
+    if dataset_name == "vaswani":
+        ds = pt.datasets.get_dataset("vaswani")
+        queries = ds.get_topics()
+        qrels = ds.get_qrels()
+    elif dataset_name == "trec-deep-learning-docs":
+        ds = pt.datasets.get_dataset("trec-deep-learning-docs")
+        queries = ds.get_topics()
+        qrels = ds.get_qrels()
+    else:
+        print("No queries or qrels found, Shutting down.")
+        return None
+
+    # Get the model
+    BM25 = pt.BatchRetrieve(index, controls = {"wmodel": "BM25"})
+    res = BM25.transform(queries)
+
+    # Evaluate the model
+    evaluation = pt.Utils.evaluate(res, qrels, metrics=["map"], perquery=False)
+    print(evaluation)
+
+    return index_time_len, evaluation
+
 def main():
     if not pt.started():
         pt.init()
 
-#     dataset = pt.datasets.get_dataset("vaswani")
-#     v_corpus = dataset.get_corpus()
+    #   Valid Stemmers: "porter", "snowball" and ""
+    #   Valid Datasets: "vaswani", "trec-deep-learning-docs"
     
-#     s_ctr = 0
-#     p_ctr = 0
-#     for i in range(0,20):
-#         start = time.time()
-#         indexref = gen_index("./res/temp/v_snowball_index", "snowball", v_corpus)
-#         end = time.time()
-#         s_ctr = s_ctr + (end-start)
-#         #print("Time for Snowball indexing:", end - start)
-#         start = time.time()
-#         porter_indexref = gen_index("./res/temp/v_porter_index", "porter", v_corpus)
-#         end = time.time()
-#         p_ctr = p_ctr + (end-start)
-#         #print("Time for Porter indexing:", end - start)
-#     print("Average time for Snowball:", s_ctr/20)
-#     print("Average time for Porter:", p_ctr/20)
-    
-#     index = pt.IndexFactory.of(indexref)
-#     v_porter_idx = pt.IndexFactory.of(porter_indexref)
-#     topics = dataset.get_topics()
-#     s_res = perform_retrieval(index,topics,"res/v_snowball_res")
-#     p_res = perform_retrieval(v_porter_idx,topics,"res/v_porter_res")
-
-#     qrels = dataset.get_qrels()
-#     s_evals = evaluate(s_res,qrels, metrics=["map"], perquery=False)
-#     p_evals = evaluate(p_res, qrels, metrics=["map"], perquery=False)
-#     print(s_evals, p_evals)
-
-
+    time_taken, evaluation = conduct_experiment("vaswani", "./res/v_None_index", "porter", False)
 #     cisi_dataset = pd.read_csv("./res/cisi_dataframe.csv")
 #     corpus = cisi_dataset['text']
 #     doc_no = cisi_dataset['docno'].astype(str)
@@ -107,14 +163,14 @@ def main():
 #     print(index.getCollectionStatistics().toString())
     
     
-    trec_dl_dataset = pt.datasets.get_dataset("trec-deep-learning-docs")
-    indexer = Indexer("./trec_porter_index", "porter", trec_dl_dataset.get_corpus(), None)
-    start = time.time()
-    indexref = indexer.index()
-    end = time.time()
-    print("Time for Porter indexing:", end - start)
-    index = pt.IndexFactory.of(indexref)
-    print(index.getCollectionStatistics().toString())
+#    trec_dl_dataset = pt.datasets.get_dataset("trec-deep-learning-docs")
+#    indexer = Indexer("./trec_porter_index", "porter", trec_dl_dataset.get_corpus(), None)
+#    start = time.time()
+#    indexref = indexer.index()
+#    end = time.time()
+#    print("Time for Porter indexing:", end - start)
+#    index = pt.IndexFactory.of(indexref)
+#    print(index.getCollectionStatistics().toString())
 
 if __name__ == "__main__":
     main()
