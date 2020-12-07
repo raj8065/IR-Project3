@@ -32,4 +32,4 @@ def make_CISI_dataframe():
 
 if __name__ == "__main__":
     df = make_CISI_dataframe()
-    df.to_csv("./res/dataframe.csv")
+    df.to_csv("./res/cisi_dataframe.csv")
