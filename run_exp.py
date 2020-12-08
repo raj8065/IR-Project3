@@ -2,20 +2,16 @@ import pyterrier as pt
 import pandas as pd
 import time
 import sys
+import os
 
 class Indexer():
 
-    def __init__(self, index_path, stemmer, corpus, docno):      
+    def __init__(self, index_path, stemmer, corpus):      
         self.index_path = index_path
         
         # Get the corpus
         self.corpus = corpus
-        if docno is not None:
-            self.indexer = pt.DFIndexer(index_path)
-            self.doc_no =docno
-        else:
-            self.indexer = pt.TRECCollectionIndexer(index_path)
-            self.doc_no = None
+        self.indexer = pt.TRECCollectionIndexer(index_path)
 
         # Set the stemmer, and don't add stopwords
         index_props = None
@@ -28,14 +24,12 @@ class Indexer():
         self.indexer.setProperties(**index_props)
 
     def index(self):
-        if self.doc_no is not None:
-            return self.indexer.index(self.corpus, self.doc_no)
         return self.indexer.index(self.corpus)
 
 class Retriever():
     def __init__(self, index):
         self.index = index
-        self.retr = pt.BatchRetrieve(self.index, controls = {"wmodel": "TF_IDF"})
+        self.retr = pt.BatchRetrieve(self.index, controls = {"wmodel": "BM25"})
 
     def transform(self, topics):
         return self.retr.transform(topics)
@@ -44,18 +38,16 @@ class Retriever():
         self.retr.saveResult(res,path)
     
 
-def gen_index(idx_path, stemmer, data_corpus, docno = None):
-    indexer = Indexer(idx_path, stemmer, data_corpus, docno)
-    return indexer.index()
+def gen_index(idx_path, stemmer, data_corpus):
+    # Generate the indexer
+    indexer = Indexer(idx_path, stemmer, data_corpus)
+    # The indexing
+    start_time = time.time()
+    indexref = indexer.index()
+    end_time = time.time()
+    index_time_len = end_time - start_time
+    return (indexref, index_time_len)
 
-def perform_retrieval(index, topics, save_path):
-    retr = Retriever(index)
-    res = retr.transform(topics)
-    retr.save_result(res, save_path)
-    return res
-
-def evaluate(res, qrels, metrics, perquery):
-    return pt.Utils.evaluate(res,qrels,metrics=metrics, perquery=perquery)
  
 """
 dataset: string, the name of the dataset for PyTerrier to use
@@ -63,7 +55,7 @@ index_dir_name: string, name of the indexer to use
 stemmer: string, stemmer type
 only_retrieval: boolean, 
 """
-def conduct_experiment( dataset_name, index_dir_name, stemmer, only_retrieval ):
+def conduct_experiment( dataset_name, index_dir_name, stemmer, only_retrieval):
 
     index_time_len = None
     print("Conducting an experiment [", dataset_name, ", ", stemmer, ", ", only_retrieval, "]:")
@@ -73,42 +65,25 @@ def conduct_experiment( dataset_name, index_dir_name, stemmer, only_retrieval ):
         # Gets the corpus for the experiment
         dataset_name = dataset_name.lower()
         corpus = None
-        if dataset_name == "vaswani":
-            ds = pt.datasets.get_dataset("vaswani")
-            corpus = ds.get_corpus()
-        elif dataset_name == "trec-deep-learning-docs":
-            ds = pt.datasets.get_dataset("trec-deep-learning-docs")
+        if dataset_name == "vaswani" or dataset_name == "trec-deep-learning-docs":
+            ds = pt.datasets.get_dataset(dataset_name)
             corpus = ds.get_corpus()
         else:
             print("No corpus found, Shutting down.")
             return None
 
-        # Generate the indexer
-        indexer = Indexer(index_dir_name, stemmer, corpus, None)
-
-        # The indexing
-        start_time = time.time()
-        indexref = indexer.index()
-        end_time = time.time()
+        # Generated index, get path to its data.properties
+        (indexref, elapsed_time) = gen_index(index_dir_name, stemmer, corpus)        
         index = pt.IndexFactory.of(indexref)
-
-        index_time_len = end_time - start_time
+        
         # Print a nice output
         print("Time for indexing of [", dataset_name, ", ", stemmer, "]: ", str(index_time_len) )
         print(index.getCollectionStatistics().toString())
 
-        # Print Index Terms to a file
-        # f = open("UnStopped_Index.txt","w")
-        # for idx in index.getLexicon():
-        #     f.write(idx.getKey() + "\n")
-        # f.close()
 
-    # Get index
-    index = None
-    if( only_retrieval ):
-        index = pt.IndexFactory.of( index_dir_name + '/data.properties' )
     else:
-        index = pt.IndexFactory.of(indexref)
+        index = pt.IndexFactory.of(index_dir_name + '/data.properties')
+   
 
     # Get the other Info
     queries = None
@@ -119,8 +94,8 @@ def conduct_experiment( dataset_name, index_dir_name, stemmer, only_retrieval ):
         qrels = ds.get_qrels()
     elif dataset_name == "trec-deep-learning-docs":
         ds = pt.datasets.get_dataset("trec-deep-learning-docs")
-        queries = ds.get_topics()
-        qrels = ds.get_qrels()
+        queries = ds.get_topics("dev")
+        qrels = ds.get_qrels("dev")
     else:
         print("No queries or qrels found, Shutting down.")
         return None
@@ -157,34 +132,6 @@ def main():
 
     time_taken, evaluation = conduct_experiment(dataset, index_loc, stemmer, only_retr)
 
-#     cisi_dataset = pd.read_csv("./res/cisi_dataframe.csv")
-#     corpus = cisi_dataset['text']
-#     doc_no = cisi_dataset['docno'].astype(str)
-#     #cisi_s_indexref = gen_index("./res/c_snowball_index", "snowball", corpus, doc_no)
-#     cisi_p_indexref = gen_index("./res/c_porter_index", "porter", corpus, doc_no)
-#     cisi_s_indexref = gen_index("./res/c_snowball_index", "snowball", corpus, doc_no)
-
-#     cisi_p_index = pt.IndexFactory.of(cisi_p_indexref)
-    #cisi_s_index = pt.IndexFactory.of(cisi_s_indexref) 
-    #topics =  pt.io.read_topics("./res/CISI.QRY")
-    #cisi_s_res = perform_retrieval(cisi_s_index, topics, "res/cisi_s_res")
-    #cisi_p_res = perform_retrieval(cisi_p_index, topics, "res/cisi_p_res")
-    
-#     trec_dl_dataset = pt.datasets.get_dataset("trec-deep-learning-docs")
-#     indexer = Indexer("./trec_index", "snowball", trec_dl_dataset.get_corpus(), None)
-#     indexref = indexer.index()
-#     index = pt.IndexFactory.of(indexref)
-#     print(index.getCollectionStatistics().toString())
-    
-    
-#    trec_dl_dataset = pt.datasets.get_dataset("trec-deep-learning-docs")
-#    indexer = Indexer("./trec_porter_index", "porter", trec_dl_dataset.get_corpus(), None)
-#    start = time.time()
-#    indexref = indexer.index()
-#    end = time.time()
-#    print("Time for Porter indexing:", end - start)
-#    index = pt.IndexFactory.of(indexref)
-#    print(index.getCollectionStatistics().toString())
 
 if __name__ == "__main__":
     main()
